@@ -20,8 +20,3 @@ export const  GOOGLE_AUTH_TOKEN_URL = process.env.GOOGLE_AUTH_TOKEN_URL as strin
 export const CLIENT_BASE_URL = process.env.CLIENT_BASE_URL as string
 
 export const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET as string
-
-
-
-
-/* {"web":{"client_id":"717083510169-h9cfl22pm99uol0b1mlh6262s1kaq61k.apps.googleusercontent.com","project_id":"chatapp2024-430714","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","client_secret":"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","redirect_uris":["http://localhost:5555/api/auth/google"]}} */
