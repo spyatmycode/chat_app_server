@@ -2,6 +2,11 @@ import { Request, Response } from "express"
 import validator from "validator"
 import { userModel } from "../models/user.models"
 import { confirmPassword, generateJWTToken, hashPassword } from "../helpers/encryption"
+import { getGoogleAuthToken } from "../services/auth.services"
+import jsonwebtoken from 'jsonwebtoken';
+import { CLIENT_BASE_URL, GOOGLE_CLIENT_SECRET, JWT_REFRESH_SECRET, JWT_SECRET } from "../config"
+
+
 
 
 type signupDataType = {
@@ -19,14 +24,16 @@ type signupDataType = {
 export const login = async (req: Request, res: Response) => {
 
     try {
-        const { username, email, password }: { username?: string, email?: string, password: string } = req.body
+        const { usernameOrEmail, password }: { usernameOrEmail?: string, email?: string, password: string } = req.body
 
         const user = await userModel.findOne({
             $or: [
-                { username },
-                { email }
+                { username: usernameOrEmail },
+                { email: usernameOrEmail }
             ]
         })
+
+
 
         if (!user) {
             return res.status(404).json({
@@ -44,12 +51,18 @@ export const login = async (req: Request, res: Response) => {
             })
         }
 
-        generateJWTToken(res, {email: user.email},{_id:user._id},{username})
+        const { accessToken, refreshToken } = generateJWTToken(res, { email: user.email }, { _id: user._id }, { username: user.username });
+
+        user.refreshToken = refreshToken
+
+        await user.save()
+
 
         return res.status(200).json({
 
             success: true,
-            msg: `Welcome ${user.firstName}`
+            msg: `Welcome ${user.firstName}`,
+            accessToken
 
         })
 
@@ -63,7 +76,7 @@ export const login = async (req: Request, res: Response) => {
 export const logout = async (_: any, res: Response) => {
 
     try {
-        res.cookie("token", "", {
+        res.cookie("refreshToken", "", {
             maxAge: 0
         })
         return res.status(200).json({ success: true, msg: "Logout successful." })
@@ -76,6 +89,8 @@ export const logout = async (_: any, res: Response) => {
 
 
 export const signup = async (req: Request, res: Response) => {
+
+
 
     try {
 
@@ -105,7 +120,11 @@ export const signup = async (req: Request, res: Response) => {
             })
         }
 
-        const userExists = await userModel.findOne({ email });
+        const userExists = await userModel.findOne({
+            $or: [
+                { email }, { username }
+            ]
+        });
 
         if (userExists) {
             return res.status(400).json({
@@ -124,21 +143,229 @@ export const signup = async (req: Request, res: Response) => {
             profilePicture: profilePic,
             phoneNumber,
             username,
-            password: hashPassword(password)
+            password: hashPassword(password),
+            completedProfile:true
 
         })
+
+        const accessToken = generateJWTToken(res, { email: newUser.email }, { _id: newUser._id }, { username })
 
         return res.status(201).json({
             msg: "User created successfully",
             success: true,
-            token: generateJWTToken(res,{email:newUser.email}, {_id:newUser._id}, {username})
+            accessToken
         })
 
 
 
-    } catch (error) {
-        console.log(error);
-        throw error
+    } catch (error:any) {
+        console.error(error?.message);
+        res.status(500).json({
+            success:false,
+            msg:error?.message
+        })
+        
     }
 
+}
+
+
+export const checkForCompleteProfile = async(req:Request, res:Response)=>{
+    try {
+        const {senderID:userID} = req as any;
+
+        const findUser = await userModel.findById(userID);
+
+        if(findUser?.completedProfile){
+            return res.status(401).json({
+                msg:"Profile already completed",
+                success:false
+            })
+        }
+
+        return res.status(200).json({
+            msg:"Proceed with profile completion",
+            success:true
+        })
+
+
+    } catch (error:any) {
+        console.error(error)
+        return res.status(500).json({msg:`Internal server error; ${error?.message} `})
+    }
+}
+
+export const completeUserProfile = async (req: Request, res: Response) => {
+    try {
+        const { senderID: userID } = req as any;
+
+        
+        const { password, confirmPassword, gender, phoneNumber, username }: any = req.body;
+
+        const findUser = await userModel.findById(userID);
+
+        const existingUserName = await userModel.findOne({username: username})
+
+        if (existingUserName?.username === username) {
+           
+            
+            return res.status(200).json({
+                success: false,
+                msg: "Username already in use"
+            })
+        }
+
+        if (password !== confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                msg: "Passwords do not match"
+            })
+        }
+
+
+
+        const {refreshToken, accessToken} = generateJWTToken(res, {_id:findUser?._id})
+
+        Object.assign(findUser as Object, { password: hashPassword(password), gender, phoneNumber, username, refreshToken, completedProfile:true });
+
+        await findUser?.save();
+
+        return res.status(200).json({
+            msg:`Profile completed successfully. Welcome ${findUser?.firstName}`,
+            success:true,
+            accessToken
+        })
+
+    } catch (error:any) {
+        return res.status(500).json({
+            success:false,
+            msg: error?.message
+        })
+    }
+}
+
+
+
+export const googleAuth = async (req: Request, res: Response) => {
+    try {
+        const code = req.query.code as string
+
+        const { id_token, access_token } = await getGoogleAuthToken(code);
+
+
+        const { email, family_name, given_name, picture, email_verified }: any = jsonwebtoken.decode(id_token)
+
+        const user = await userModel.findOne({
+            $or: [
+                { email }
+            ]
+        })
+
+        if (user && email_verified) {
+
+           
+
+            const { refreshToken } = generateJWTToken(res, { email: user.email }, { _id: user._id }, { username: user.username });
+
+            user.refreshToken = refreshToken;
+    
+            await user.save()
+
+            return res.redirect(`${CLIENT_BASE_URL}`)
+
+
+        }
+
+
+
+
+        const newUser = await userModel.create({
+            email,
+            firstName: given_name,
+            lastName: family_name,
+            profilePicture: picture,
+            
+
+        });
+
+        const {refreshToken}= generateJWTToken(res, { email }, { _id: newUser._id });
+
+        newUser.refreshToken = refreshToken;
+
+        await newUser.save();
+
+       
+        return res.redirect(`${CLIENT_BASE_URL}/complete-profile`);
+
+
+
+
+
+    } catch (error:any) {
+        console.error(error?.message);
+        res.status(500).json({
+            success:false,
+            msg:error?.message
+        })
+        
+    }
+}
+
+
+export const getRefreshToken = async (req: Request, res: Response) => {
+    try {
+
+        const { refreshToken } = req.cookies;
+
+        if (!refreshToken) {
+            return res.status(403).json({
+                msg: "Refresh token missing",
+                success: false
+            })
+        }
+
+       
+        
+
+        const { _id } = jsonwebtoken.verify(refreshToken, JWT_REFRESH_SECRET) as any;
+
+        const user = await userModel.findById(_id);
+
+        if (!user || user.refreshToken !== refreshToken) {
+           
+            
+            return res.status(403).json({
+                msg: "Log out at this point",
+                success: false
+            });
+        }
+
+        const {accessToken:newAccessToken, refreshToken:newRefreshToken} = generateJWTToken(res, {_id:user._id});
+
+        
+
+        user.refreshToken = newRefreshToken;
+
+        await user.save();
+
+        
+
+        return res.status(200).json({
+            msg:"Token successfully refreshed",
+            success:true,
+            accessToken:newAccessToken
+        });
+
+
+
+
+
+    } catch (error:any) {
+        console.error(error?.message);
+        res.status(500).json({
+            success:false,
+            msg:error?.message
+        })
+        
+    }
 }

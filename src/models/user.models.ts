@@ -4,7 +4,6 @@ const userSchema =new mongoose.Schema({
 
     username:{
         type: String,
-        required:true,
         unique:true
     },
     firstName:{
@@ -26,7 +25,7 @@ const userSchema =new mongoose.Schema({
     },
     gender:{
         type:String,
-        enum:["male", "female"]
+        enum:["male", "female", null]
     },
     password:{
         type:String,
@@ -36,6 +35,13 @@ const userSchema =new mongoose.Schema({
         type:String,
         default:""
         
+    },
+    completedProfile:{
+        type:Boolean,
+        default:false
+    },
+    refreshToken:{
+        type:String,
     }
 
 },{

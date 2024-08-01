@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { conversationModel } from "../models/conversation.models";
 import { userModel } from "../models/user.models";
-import mongoose from "mongoose";
 import { toObjectId } from "../helpers/mongoose";
 import { chatModel } from "../models/chat.models";
 
@@ -17,42 +16,84 @@ export interface CustomResponse extends Response {
     }) => this;
 }
 
-export const getAllConversations = async(req:Request, res:Response)=>{
+export const getAllConversations = async (req: Request, res: Response) => {
     try {
-        const {senderID:userID} = req as CustomRequest
 
-        console.log(userID);
+
+        const { senderID: userID } = req as CustomRequest;
+
+
+        const findUserConvos:any = await conversationModel.find({
+            participants: {
+                $all: [userID],
+            
+            }
+        }).populate("chats").populate({path:"participants", select:"username _id profilePicture"});
+
+        const user =await  userModel.findById(userID).select("profilePicture username")
+
         
 
-        const findUserConvos = await conversationModel.find({
-            participants:{
-                $all:[ userID]
-            }
-        }).populate("chats")
 
-        if(!findUserConvos || findUserConvos.length ===0 ){
+       
+
+        if(findUserConvos && findUserConvos?.length === 0){
+            
+
             return res.status(200).json({
-                success:false,
-                msg:"No conversations found"
-            })
+                user,
+                success: false,
+                msg: "No conversations found"
+            });
         }
 
-        console.log(findUserConvos);
-        
+        const filteredConvos = findUserConvos.map(({participants,chats }:any)=>{
 
-        return res.status(201).json({
-            data:findUserConvos,
-            msg:"Conversations found",
-            success:true
+                   
+
+            const receiver = participants.find(({_id}:{_id:string})=> _id.toString()!==userID);
+
+            
+
+            const lastMessage = chats.sort((a:any,b:any)=>{
+                
+                const aDate :any= new Date(a.createdAt)
+                const bDate:any = new Date(b.createdAt)
+
+               
+                return aDate - bDate
+
+
+            }).slice(-1)[0]
+
+           
+            
+
+
+            return {
+                receiver,
+                lastMessage
+            }
+
         })
-        
+
+
+        return res.status(200).json({
+            user,
+            data: filteredConvos,
+            msg: "Conversations found",
+            success: true
+        });
 
     } catch (error) {
-        throw error
+        console.error(error);
+        
+        res.status(500).json({
+            msg:"Internal Server Error",
+            success:false
+        })
     }
-}
-
-
+};
 
 export const sendChat = async(req:Request, res:Response)=>{
     try {
@@ -61,6 +102,13 @@ export const sendChat = async(req:Request, res:Response)=>{
         const {senderID} = req as CustomRequest
 
         const {message} = req.body
+
+        if(receiverID === senderID){
+            return res.status(400).json({
+                msg:"Cannot send message to self at this time.",
+                success:false
+            })
+        }
 
 
         const checkRecieverIDExists = await userModel.findById(receiverID);
@@ -76,11 +124,6 @@ export const sendChat = async(req:Request, res:Response)=>{
             message
         })
 
-        console.log({
-            senderID,
-            receiverID,
-            message
-        });
         
 
         const participantsIDs = [
@@ -94,7 +137,6 @@ export const sendChat = async(req:Request, res:Response)=>{
             }
         })
 
-        console.log(findConversation);
         
 
         if(!findConversation || findConversation.chats.length < 1){
@@ -123,26 +165,82 @@ export const sendChat = async(req:Request, res:Response)=>{
 
 
 
-    } catch (error) {
-
-        throw error
-        
-    }
-}
-
-
-export const getConversationChats = async (req: Request, res: Response)=>{
-    try {
-        const {senderID} = req as CustomRequest
-        const {receiverID} = req.params 
-
-        const messagesInChat = await chatModel.find({
-            receiverID,
-            
+    } catch (error:any) {
+        console.error(error?.message);
+        res.status(500).json({
+            success:false,
+            msg:error?.message
         })
-
-
-    } catch (error) {
         
     }
 }
+
+
+export const getChatsForConversation = async(req:Request, res:Response)=>{
+    try {
+
+        const {senderID:userID} = req as any
+        const {recieverID} = req.params
+
+
+        const findConversation:any = await conversationModel.findOne({
+            participants: {
+                $all: [recieverID, userID],
+            
+            }
+        }).populate("chats").populate({path:"participants", select:"username _id profilePicture"});
+
+        const findReceiver = await userModel.findById(recieverID).select("username _id profilePicture")
+
+        if(!findConversation || findConversation?.chats?.length === 0){
+           
+            return res.status(200).json({
+                data:{
+                    receiver:findReceiver,
+                    chats:[]
+                },
+                success: false,
+                msg: "No conversations found"
+            });
+        }
+
+          const modifiedChat = {
+            receiver: findConversation?.participants?.find(({_id}:{_id:string})=> _id.toString()!==userID),
+            chats:findConversation.chats.map((chat:any)=>{
+
+                    return {
+
+                ...chat._doc,
+                position: chat?._doc.senderID.toString() === userID ? "end":"start"
+
+            }}).sort((a:any,b:any)=>{
+                
+                const aDate :any= new Date(a.createdAt)
+                const bDate:any = new Date(b.createdAt)
+
+               
+                return aDate - bDate
+
+
+            })
+          }
+        
+
+        return res.status(200).json({
+            data: modifiedChat,
+            msg: "Conversations found",
+            success: true
+        });
+
+
+    } catch (error:any) {
+        console.error(error?.message);
+        res.status(500).json({
+            success:false,
+            msg:error?.message
+        })
+        
+    }
+}
+
+

@@ -1,6 +1,6 @@
 import bcrypt from "bcryptjs"
 import jsonwebtoken from "jsonwebtoken"
-import { JWT_SECRET, NODE_ENV } from "../config"
+import { JWT_REFRESH_SECRET, JWT_SECRET, NODE_ENV } from "../config"
 import {Response} from 'express'
 
 
@@ -28,19 +28,23 @@ export const generateJWTToken = (res:Response,...rest:any)=>{
 
     try {
 
-        const secureToken = jsonwebtoken.sign(Object.assign({}, ...rest), JWT_SECRET,{
+        const accessToken = jsonwebtoken.sign(Object.assign({}, ...rest), JWT_SECRET,{
             expiresIn:"1hr"
-        })
+        });
 
-        res.cookie("token", secureToken, {
+        const refreshToken = jsonwebtoken.sign(Object.assign({}, ...rest),JWT_REFRESH_SECRET,{
+            expiresIn:"1d"
+        } )
+
+        res.cookie("refreshToken", refreshToken, {
             httpOnly:true, // only accessible via http and prevent xss attach
-            maxAge:60*60*1000, //1 hour
+            maxAge:24*60*60*1000, //1 hour
             sameSite:"strict", // prevent csfr attach
-            secure: NODE_ENV === "production"
+            secure: true//NODE_ENV === "production"
         })
 
 
-        return secureToken
+        return {accessToken, refreshToken}
     } catch (error) {
         throw error
     }

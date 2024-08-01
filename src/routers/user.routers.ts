@@ -1,11 +1,11 @@
 import express from 'express'
-import { chatMiddleware } from '../middlewares/chat.middlewares';
+import { authMiddleware } from '../middlewares/auth.middlewares';
 import { findUsers } from '../controllers/user.controllers';
 
 const router = express.Router();
 
-router.use(chatMiddleware);
+router.use(authMiddleware);
 
-router.get('/search', findUsers);
+router.get('/search/:username', findUsers);
 
 export default router

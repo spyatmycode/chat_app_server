@@ -6,7 +6,7 @@ const conversationSchema = new mongoose.Schema({
     participants:{
         type:[mongoose.Schema.Types.ObjectId],
         ref:'Users',
-        required:true
+        required:true,
     },
     chats:{
         type:[mongoose.Schema.Types.ObjectId],
