@@ -27,7 +27,7 @@ import { getGoogleAuthUrl } from './helpers/auth';
 const app:Application = express()
 
 app.use(cors({
-    origin: 'http://localhost:5173', // Replace with your frontend URL
+    origin: ['http://localhost:5173','https://chat-app-client-livid.vercel.app', 'chat-app-client-git-main-spyatmycodes-projects.vercel.app', 'chat-app-client-63ric2obm-spyatmycodes-projects.vercel.app'], // Replace with your frontend URL
     credentials: true // Allow cookies to be sent and received
 }));
 
